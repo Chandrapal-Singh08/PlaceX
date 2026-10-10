@@ -25,7 +25,11 @@ class PlaceXCore:
     def __init__(self, cfg: Config | None = None, ai=None, probe=default_probe):
         self.cfg = cfg or Config()
         db.init_pool(self.cfg.dsn, min_size=2, max_size=self.cfg.workers * 2 + 8)
-        db.ensure_auth_schema()
+        try:
+            db.ensure_auth_schema()
+        except Exception:
+            db.close_pool()
+            raise
         self.repo = Repo()
         self.ai = ai or KeywordBackend()
         self.store = FileStore(self.cfg.upload_dir, self.cfg.max_upload_mb * 1_048_576,
