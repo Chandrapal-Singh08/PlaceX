@@ -39,6 +39,54 @@ def test_full_pipeline_all_four_modules(core, user):
     assert (core.store.root / "users" / str(user["id"]) / "generated" /
             f"{gen['file_hash']}.pdf").read_bytes().startswith(b"%PDF-")
 
+def test_prep_plan_scheduling_and_retries_reuse_the_saved_roadmap(core, user):
+    resume, analysis = analyze(core, user)
+    payload = {
+        "report_id": analysis["result"]["report_id"],
+        "daily_study_hours": 3,
+        "deadline_days": 15,
+    }
+    first = core.wait(core.submit(user["id"], "PREP_PLAN", payload)["id"])
+    second = core.wait(core.submit(user["id"], "PREP_PLAN", payload)["id"])
+    duplicate_report = core.repo.save_report(
+        user["id"], resume["id"], 1, None, 50, [],
+    )
+    repeated_analysis = core.wait(core.submit(user["id"], "PREP_PLAN", {
+        **payload, "report_id": duplicate_report["id"],
+    })["id"])
+
+    assert first["status"] == "DONE", first["error"]
+    assert second["status"] == "DONE", second["error"]
+    assert repeated_analysis["status"] == "DONE", repeated_analysis["error"]
+    assert first["result"]["daily_study_hours"] == 3
+    assert first["result"]["deadline_days"] == 15
+    assert second["result"]["reused_existing"] is True
+    assert repeated_analysis["result"]["reused_existing"] is True
+    assert second["result"]["roadmap_id"] == first["result"]["roadmap_id"]
+    assert repeated_analysis["result"]["roadmap_id"] == first["result"]["roadmap_id"]
+    assert core.repo.list_user_roadmaps(user["id"])[0]["id"] == first["result"]["roadmap_id"]
+
+def test_prep_plan_reports_matched_skills_when_no_roadmap_is_needed(core, user):
+    resume = core.upload_resume(
+        user["id"], "complete.txt",
+        b"Python SQL REST APIs PostgreSQL Data Structures Git Docker Linux",
+    )
+    analysis = core.wait(core.submit(
+        user["id"], "RESUME_ANALYSIS",
+        {"resume_id": resume["id"], "jd_id": 1},
+    )["id"])
+    assert analysis["status"] == "DONE", analysis["error"]
+
+    plan = core.wait(core.submit(user["id"], "PREP_PLAN", {
+        "report_id": analysis["result"]["report_id"],
+    })["id"])
+    assert plan["status"] == "DONE", plan["error"]
+    assert plan["result"]["roadmap_id"] is None
+    assert set(plan["result"]["matched_skills"]) == {
+        "Python", "SQL", "REST APIs", "PostgreSQL",
+        "Data Structures", "Git", "Docker", "Linux",
+    }
+
 def test_resume_build_from_uploaded_jd_creates_both_formats(core, user):
     from pathlib import Path
     jd_path = Path(__file__).parent / "fixtures" / "backend-engineer-jd.txt"
