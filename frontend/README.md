@@ -18,9 +18,9 @@ Accounts created before password authentication have no password hash and cannot
 
 ## Job descriptions
 
-Analyze, build, prep-plan, and journey-guide flows can use an existing JD, pasted text, or a PDF/DOCX/TXT/MD upload. Existing JDs load from `GET /job-descriptions`; paste and file inputs submit to `POST /job-descriptions`. Files are limited to 5 MB, and JDs with no recognized skills receive a clear validation error.
+Analyze, build, and prep-plan flows can use an existing JD, pasted text, or a PDF/DOCX/TXT/MD upload. Existing JDs load from `GET /job-descriptions`; paste and file inputs submit to `POST /job-descriptions`. Files are limited to 5 MB, and JDs with no recognized skills receive a clear validation error. Prep Plan conditionally displays one JD input method at a time, selects an owner's readable resume from `GET /users/{id}/resumes` (or accepts a new upload), and reuses an analysis only when it matches that resume and JD through `GET /users/{id}/matching-analysis`. Daily hours and supported deadline choices are stored in the existing prep job payload and shown as workload estimates. Journey Guide instead selects a stored company and optionally one of its stored job descriptions; it displays only hiring rounds present in the database.
 
-All network calls go through `js/api.js`. Jobs use `POST /jobs` and `GET /jobs/{id}`; dashboards use `GET /users/{id}/dashboard`; company and status pages use `GET /companies` and `GET /system`.
+All network calls go through `js/api.js`. Jobs use `POST /jobs` and `GET /jobs/{id}`; dashboards use `GET /users/{id}/dashboard`; saved prep plans use `GET /users/{id}/roadmaps` and item progress uses `PATCH /roadmap-items/{id}`. Company and status pages use `GET /companies` and `GET /system`.
 
 ## Resume downloads
 
@@ -31,5 +31,7 @@ Download either format with `GET /resumes/{id}/download/pdf` or `GET /resumes/{i
 ## Remaining limitations
 
 - Recent activity is based on job IDs stored in this browser; there is no job-list endpoint.
-- Roadmap item status updates are not exposed over HTTP.
-- Hiring rounds are shown only for companies with configured records. Custom JDs that cannot be matched to a known company do not receive invented rounds.
+- Journey Guide displays only hiring rounds stored for the selected company; missing records or fields are explicitly shown as unavailable, not treated as company requirements.
+- A prep plan is generated from a user's report and its real JD skill gaps. If no gaps are found, no empty roadmap record is created.
+- Saved prep roadmaps and per-item `TODO` / `IN_PROGRESS` / `DONE` status are loaded from and persisted to PostgreSQL.
+- Prep Plan workload figures are estimates based on stored skill-hour values, saved completion statuses, and the daily-time/deadline preferences from a successful generation job; there is no skill-level input because the backend does not use one.

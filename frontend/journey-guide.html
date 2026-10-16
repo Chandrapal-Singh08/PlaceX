@@ -4,9 +4,16 @@
 <body data-page="journey" data-auth="required">
 <div class="app"><aside id="sidebar"></aside>
 <main class="content">
-<div class="page-head"><h1>Your Journey Guide</h1><p>See configured company hiring rounds and preparation guidance for a job.</p></div>
-<section class="glass" id="picker"><div id="jd"></div><button class="btn" id="go">Generate journey guide</button></section>
+<div class="page-head"><h1>Company Hiring Journey</h1><p>Explore the hiring rounds currently recorded for a company. This guide is informational, not a guarantee of current requirements.</p></div>
+<section class="glass" id="picker">
+	<div class="pick">
+		<label class="field"><span>Company</span><select id="company" required><option value="">Loading companies…</option></select></label>
+		<label class="field"><span>Role <small>(optional)</small></span><select id="role" disabled><option value="">All company roles</option></select></label>
+	</div>
+	<p class="muted">Round details come from hiring information stored in PlaceX. Missing details are not available in the database.</p>
+	<button class="btn" id="go" disabled>View hiring process</button>
+</section>
 <div id="progress" hidden></div><div id="result" hidden></div>
 </main></div>
-<script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/core.js"></script><script src="js/jd-input.js"></script><script src="js/journey.js"></script>
+<script src="js/config.js"></script><script src="js/api.js?v=4"></script><script src="js/core.js"></script><script src="js/journey.js"></script>
 </body></html>
