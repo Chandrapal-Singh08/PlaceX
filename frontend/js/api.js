@@ -85,6 +85,12 @@
     getJob: (id) => request(`/jobs/${id}`),
     cancelJob: (id, userId) => request(`/jobs/${id}` + (userId ? `?user_id=${userId}` : ""), { method: "DELETE" }),
     dashboard: (userId) => request(`/users/${userId}/dashboard`),
+    resumes: (userId) => request(`/users/${userId}/resumes`),
+    matchingAnalysis: (userId, resumeId, jdId) => request(
+      `/users/${userId}/matching-analysis?resume_id=${encodeURIComponent(resumeId)}&jd_id=${encodeURIComponent(jdId)}`
+    ),
+    roadmaps: (userId) => request(`/users/${userId}/roadmaps`),
+    updateRoadmapItem: (itemId, status) => request(`/roadmap-items/${itemId}`, json("PATCH", { status })),
     companies: () => request("/companies"),
     system: () => request("/system"),
 
