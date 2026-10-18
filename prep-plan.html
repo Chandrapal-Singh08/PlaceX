@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prep Plan — PlaceX</title><link rel="stylesheet" href="css/global.css"><link rel="stylesheet" href="css/prep.css"></head>
+<body data-page="prep" data-auth="required">
+<div class="app"><aside id="sidebar"></aside>
+<main class="content">
+<div class="page-head"><h1>Your Personalized Prep Plan</h1><p>Compare a resume with a job description, then build a prioritized study plan with resources.</p></div>
+<section class="glass" id="picker">
+	<div class="pick"><label class="field"><span>Existing analysis report <small>(optional)</small></span><input type="number" min="1" id="reportId" inputmode="numeric"></label></div>
+	<div id="known" class="chips" style="margin-top:.8rem"></div><small class="muted" id="pickHint" style="display:block;margin:.6rem 0 1rem"></small>
+	<div id="jd"></div>
+	<label class="field"><span>Resume file <small>(optional if you have used one before)</small></span><input type="file" id="resumeFile" accept=".pdf,.docx,.txt,.md"></label>
+	<small class="muted" id="resumeHint"></small>
+	<button class="btn" id="go">Generate prep plan</button>
+</section>
+<div id="progress" hidden></div><div id="result" hidden></div>
+</main></div>
+<script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/core.js"></script><script src="js/jd-input.js"></script><script src="js/prep.js"></script>
+</body></html>
