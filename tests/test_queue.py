@@ -85,3 +85,33 @@ def test_many_producers_many_consumers_no_loss_no_duplicates():
     for t in ps + cs: t.start()
     for t in ps + cs: t.join(60)
     assert len(got) == N_PROD * PER and len(set(got)) == N_PROD * PER
+
+
+def test_close_wakes_blocked_producer():
+    import threading
+    from placex.os_layer.queue import QueueFull
+
+    q = BoundedJobQueue(1, FCFS())
+    q.put(J(1))
+
+    started = threading.Event()
+    outcome = []
+
+    def producer():
+        started.set()
+        try:
+            q.put(J(2), block=True, timeout=5)
+            outcome.append("inserted")
+        except QueueFull:
+            outcome.append("closed")
+
+    thread = threading.Thread(target=producer)
+    thread.start()
+
+    assert started.wait(timeout=1)
+    time.sleep(0.05)
+    q.close()
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert outcome == ["closed"]

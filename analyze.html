@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Analyze Resume — PlaceX</title><link rel="stylesheet" href="css/global.css"><link rel="stylesheet" href="css/analyzer.css"></head>
+<body data-page="analyze" data-auth="required">
+<div class="app"><aside id="sidebar"></aside>
+<main class="content">
+  <div class="page-head"><h1>Analyze Your Resume</h1><p>Upload your resume, pick the job you're targeting, and get an ATS score with your skill gaps.</p></div>
+  <div class="steps"><span id="st1" class="on">1 · Upload</span><span id="st2">2 · Analyze</span><span id="st3">3 · Results</span></div>
+  <div id="progress" hidden></div>
+  <div class="two" id="work">
+    <section class="glass">
+      <h2 style="margin-bottom:1rem">Resume file</h2>
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a resume file">
+        <div class="ico">⬆️</div><b>Drag &amp; drop your resume here</b>
+        <p>or <u>browse files</u> · PDF, DOCX, TXT or MD · up to 5 MB</p>
+        <input type="file" id="file" accept=".pdf,.docx,.txt,.md" hidden>
+      </div>
+      <div class="file-prev" id="prev" hidden><span class="ico">📄</span><div><b id="fName"></b><small class="muted" id="fSize"></small></div><button class="btn ghost sm" id="clear" type="button">Remove</button></div>
+      <div id="uploaded" class="muted" style="margin-top:1rem" hidden></div>
+      <div class="actions"><button class="btn" id="uploadBtn" disabled>Upload resume</button></div>
+    </section>
+    <section class="glass">
+      <h2 style="margin-bottom:1rem">Target job</h2>
+      <div id="jd"></div>
+      <button class="btn" id="analyzeBtn" disabled style="width:100%">Analyze resume</button>
+      <small class="muted" id="analyzeHint" style="display:block;margin-top:.7rem">Upload a resume first.</small>
+    </section>
+  </div>
+</main></div>
+<script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/core.js"></script><script src="js/jd-input.js"></script><script src="js/analyzer.js?v=2"></script>
+</body></html>

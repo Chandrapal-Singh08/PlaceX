@@ -1,14 +1,18 @@
 import os, subprocess, sys, tempfile
 import psycopg, pytest
+from psycopg import sql
 
 ADMIN = os.environ.get("PLACEX_ADMIN_DSN", "postgresql://placex:placex@localhost:5432/postgres")
 TEST_DSN = os.environ.get("PLACEX_TEST_DSN", "postgresql://placex:placex@localhost:5432/placex_test")
 
 @pytest.fixture(scope="session", autouse=True)
 def _database():
+    test_db = psycopg.conninfo.conninfo_to_dict(TEST_DSN).get("dbname")
+    if not test_db or test_db == "placex" or not test_db.endswith("_test"):
+        raise RuntimeError("PLACEX_TEST_DSN must target a database whose name ends with _test")
     with psycopg.connect(ADMIN, autocommit=True) as c:
-        c.execute("DROP DATABASE IF EXISTS placex_test WITH (FORCE)")
-        c.execute("CREATE DATABASE placex_test")
+        c.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(test_db)))
+        c.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(test_db)))
     from placex.initdb import apply_schema
     apply_schema(TEST_DSN, reset=True, seed=True)
     yield

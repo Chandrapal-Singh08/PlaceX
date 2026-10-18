@@ -143,6 +143,123 @@ def test_matched_jd_uses_configured_hiring_rounds(client):
         time.sleep(0.05)
     assert job["status"] == "DONE", job.get("error")
     assert [round_["no"] for round_ in job["result"]["rounds"]] == [1, 2, 3]
+    assert job["result"]["company_name"] == "Acme Technologies (sample)"
+    assert job["result"]["role_title"] == "Software Engineer"
+    assert job["result"]["data_available"] is True
+
+
+def test_journey_guide_returns_an_empty_state_when_rounds_are_unavailable(client):
+    user = signup(client, "no-rounds@example.test", "No Rounds")
+    with db.transaction() as conn:
+        company = conn.execute(
+            "INSERT INTO companies(name) VALUES (%s) RETURNING id",
+            ("Company without rounds",),
+        ).fetchone()
+    submitted = client.post("/jobs", json={
+        "user_id": user["id"], "job_type": "JOURNEY_GUIDE",
+        "payload": {"company_id": company["id"]},
+    }).json()
+
+    for _ in range(100):
+        job = client.get(f"/jobs/{submitted['id']}").json()
+        if job["status"] in ("DONE", "FAILED"):
+            break
+        time.sleep(0.05)
+
+    assert job["status"] == "DONE", job.get("error")
+    assert job["result"]["data_available"] is False
+    assert job["result"]["rounds"] == []
+    assert "No hiring-round information" in job["result"]["note"]
+
+
+def test_saved_roadmaps_and_item_progress_are_owner_scoped(client):
+    user = signup(client, "roadmap-owner@example.test", "Roadmap Owner")
+    resume = api.core.repo.add_resume(
+        user["id"], "UPLOADED", "resume.txt", None, None, 12, "Python SQL",
+    )
+    report = api.core.repo.save_report(
+        user["id"], resume["id"], 1, None, 50, [],
+    )
+    roadmap = api.core.repo.create_roadmap(
+        user["id"], 1, report["id"], "Prep plan: Backend Developer Intern",
+        [(1, None, 8), (7, None, 4)],
+    )
+    with db.transaction() as conn:
+        item_ids = conn.execute(
+            "SELECT id FROM roadmap_items WHERE roadmap_id=%s ORDER BY position",
+            (roadmap["id"],),
+        ).fetchall()
+
+    response = client.get(f"/users/{user['id']}/roadmaps")
+    assert response.status_code == 200
+    saved = response.json()[0]
+    assert saved["id"] == roadmap["id"]
+    assert saved["role_title"] == "Backend Developer Intern"
+    assert saved["total_hours"] == 12
+    assert saved["remaining_hours"] == 12
+    assert saved["completion_pct"] == 0
+    assert [item["status"] for item in saved["items"]] == ["TODO", "TODO"]
+
+    updated = client.patch(
+        f"/roadmap-items/{item_ids[0]['id']}",
+        json={"status": "IN_PROGRESS"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["status"] == "IN_PROGRESS"
+    updated = client.patch(
+        f"/roadmap-items/{item_ids[0]['id']}",
+        json={"status": "DONE"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["completed_at"] is not None
+
+    saved = client.get(f"/users/{user['id']}/roadmaps").json()[0]
+    assert saved["completed_items"] == 1
+    assert saved["completion_pct"] == 50
+    assert saved["remaining_hours"] == 4
+
+    other = signup(client, "roadmap-other@example.test", "Other User")
+    assert client.get(f"/users/{user['id']}/roadmaps").status_code == 403
+    assert client.patch(
+        f"/roadmap-items/{item_ids[0]['id']}",
+        json={"status": "TODO"},
+    ).status_code == 404
+    assert other["id"] != user["id"]
+
+
+def test_resume_and_matching_analysis_endpoints_are_owner_scoped(client):
+    owner = signup(client, "resume-list-owner@example.test", "Resume Owner")
+    resume = client.post(
+        f"/users/{owner['id']}/resumes",
+        files={"file": ("resume.txt", b"Python SQL PostgreSQL", "text/plain")},
+    ).json()
+
+    listed = client.get(f"/users/{owner['id']}/resumes")
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()] == [resume["id"]]
+    assert "raw_text" not in listed.json()[0]
+    assert "file_path" not in listed.json()[0]
+    assert client.get(f"/users/{owner['id']}/matching-analysis", params={
+        "resume_id": resume["id"], "jd_id": 1,
+    }).json() is None
+
+    report = api.core.repo.save_report(
+        owner["id"], resume["id"], 1, None, 50, [],
+    )
+    matching = client.get(f"/users/{owner['id']}/matching-analysis", params={
+        "resume_id": resume["id"], "jd_id": 1,
+    })
+    assert matching.status_code == 200
+    assert matching.json()["id"] == report["id"]
+
+    outsider = signup(client, "resume-list-outsider@example.test", "Resume Outsider")
+    assert client.get(f"/users/{owner['id']}/resumes").status_code == 403
+    assert client.get(f"/users/{owner['id']}/matching-analysis", params={
+        "resume_id": resume["id"], "jd_id": 1,
+    }).status_code == 403
+    assert client.get(f"/users/{outsider['id']}/matching-analysis", params={
+        "resume_id": resume["id"], "jd_id": 1,
+    }).status_code == 404
 
 
 def test_jd_analysis_general_mode_and_resume_build(client):

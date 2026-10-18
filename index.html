@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PlaceX — From Resume to Dream Job</title>
+<meta name="description" content="Analyze your resume against real job descriptions, build a better one, and follow a personalized plan to your placement.">
+<link rel="stylesheet" href="css/global.css"><link rel="stylesheet" href="css/home.css">
+</head>
+<body>
+<header class="nav">
+  <a class="brand" href="index.html"><span class="logo-mark"></span>PlaceX</a>
+  <ul id="navlist">
+    <li><a href="index.html">Home</a></li><li><a href="#features">Features</a></li><li><a href="#companies">Companies</a></li>
+    <li><a href="#resources">Resources</a></li><li><a href="#about">About</a></li>
+  </ul>
+  <div style="display:flex;gap:.6rem;align-items:center">
+    <a class="btn ghost sm signin" href="login.html">Sign In</a>
+    <button class="menu" id="menuBtn" aria-expanded="false" aria-controls="navlist">Menu</button>
+  </div>
+</header>
+
+<section class="hero">
+  <div>
+    <h1>From Resume to <em>Dream Job</em></h1>
+    <p class="lead">Check your resume against a real job description, close the skill gap with a clear study plan, and know exactly what each interview round will ask.</p>
+    <div class="cta"><a class="btn" href="signup.html">Get started</a><a class="btn ghost" href="login.html">Sign In</a></div>
+  </div>
+  <div class="flow" aria-label="How PlaceX works">
+    <div class="glass step hover"><div class="ico">📄</div><div><b>Upload your resume</b><span>PDF, DOCX, TXT or MD</span></div></div>
+    <div class="glass step hover"><div class="ico">🎯</div><div><b>See your ATS score</b><span>Matched and missing skills</span></div></div>
+    <div class="glass step hover"><div class="ico">🗺️</div><div><b>Follow your prep plan</b><span>Hours per skill, in priority order</span></div></div>
+    <div class="glass step hover"><div class="ico">🚀</div><div><b>Walk the hiring rounds</b><span>Format, duration and tips</span></div></div>
+  </div>
+</section>
+
+<section class="sec" id="features">
+  <h2>Everything between application and offer</h2>
+  <p>Four tools that feed each other: the analysis drives the plan, and the plan points at the rounds you'll face.</p>
+  <div class="grid g4">
+    <a href="analyze.html" class="glass hover feat"><div class="ico">📊</div><h3>Resume Analyzer</h3><p>Upload a resume and get an ATS score with the skills you have and the ones you lack.</p></a>
+    <a href="build-resume.html" class="glass hover feat"><div class="ico">✍️</div><h3>Resume Builder</h3><p>Enter your skills and projects and generate a resume aimed at a specific role.</p></a>
+    <a href="journey-guide.html" class="glass hover feat"><div class="ico">🧭</div><h3>Placement Guide</h3><p>See each interview round, how long it runs and how to prepare.</p></a>
+    <a href="prep-plan.html" class="glass hover feat"><div class="ico">⏱️</div><h3>Company-wise planner</h3><p>Turn your skill gaps into an ordered roadmap with estimated study hours.</p></a>
+  </div>
+</section>
+
+<section class="sec" id="companies"><h2>Companies</h2><p>Browse the companies in the PlaceX database and open the hiring journey for each.</p><a class="btn ghost" href="companies.html">Explore companies</a></section>
+<section class="sec" id="resources"><h2>Resources</h2><p>Every roadmap item is matched with a study resource such as official documentation, books or practice sets.</p></section>
+<div class="glass band"><div><h2>Ready to see where you stand?</h2><p class="muted">Upload a resume and get your first analysis in seconds.</p></div><a class="btn" href="signup.html">Create your account</a></div>
+<section class="sec" id="about"><h2>About</h2><p>PlaceX is a placement guide for students. It reads your resume, compares it with the skills a role asks for, and builds the plan to close the gap.</p></section>
+
+<footer><div><a class="brand" href="index.html"><span class="logo-mark"></span>PlaceX</a><p style="margin-top:.6rem">Placement preparation for students.</p></div>
+<nav><a href="#features">Features</a><a href="companies.html">Companies</a><a href="login.html">Sign In</a><a href="signup.html">Sign Up</a></nav></footer>
+<script>
+const b=document.getElementById("menuBtn"),l=document.getElementById("navlist");
+b.addEventListener("click",()=>{const o=l.classList.toggle("open");b.setAttribute("aria-expanded",o)});
+l.addEventListener("click",e=>{if(e.target.tagName==="A")l.classList.remove("open")});
+</script>
+</body></html>

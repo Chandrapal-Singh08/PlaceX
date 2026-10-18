@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Analysis Result — PlaceX</title><link rel="stylesheet" href="css/global.css"><link rel="stylesheet" href="css/analyzer.css"></head>
+<body data-page="analyze" data-auth="required">
+<div class="app"><aside id="sidebar"></aside>
+<main class="content">
+  <div class="page-head"><h1>Your ATS Analysis</h1><p id="sub">Loading result…</p></div>
+  <div id="progress" hidden></div><div id="error"></div>
+  <div id="result" hidden>
+    <section class="glass score"><div class="ring"><svg viewBox="0 0 120 120" width="190" height="190"><defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs><circle class="tr" cx="60" cy="60" r="52"/><circle class="fg" id="fg" cx="60" cy="60" r="52" stroke-dasharray="326.7" stroke-dashoffset="326.7"/></svg><div class="val"><b id="score">0%</b><span>ATS Score</span></div></div>
+      <div><h2 id="verdict"></h2><p class="muted" id="verdictSub" style="margin:.5rem 0 1rem"></p>
+        <div class="actions" style="margin:0"><a class="btn" id="toPrep" href="prep-plan.html">Create prep plan</a><a class="btn ghost" href="build-resume.html">Build a better resume</a><a class="btn ghost" href="analyze.html">Analyze another</a></div></div></section>
+    <div class="section-title" style="margin:2rem 0 1rem"><h2>Resume overview</h2></div>
+    <section class="grid g4" id="overview"></section>
+    <div class="section-title" style="margin:2rem 0 1rem"><h2>Skill analysis</h2></div>
+    <section class="glass" id="skills"></section>
+    <div class="section-title" style="margin:2rem 0 1rem"><h2>Suggestions</h2></div>
+    <section class="tips" id="tips"></section>
+  </div>
+</main></div>
+<script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/core.js"></script><script src="js/analysis-result.js"></script>
+</body></html>

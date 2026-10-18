@@ -78,6 +78,13 @@ class Repo:
         with _c(conn) as c:
             return c.execute("SELECT * FROM companies WHERE name <> %s ORDER BY id", (CUSTOM_COMPANY,)).fetchall()
 
+    def get_company(self, company_id, conn=None):
+        with _c(conn) as c:
+            return c.execute(
+                "SELECT * FROM companies WHERE id=%s AND name <> %s",
+                (company_id, CUSTOM_COMPANY),
+            ).fetchone()
+
     def list_job_descriptions(self, conn=None):
         with _c(conn) as c:
             return c.execute(
@@ -159,6 +166,16 @@ class Repo:
             return c.execute("SELECT * FROM resumes WHERE id=%s" + (" FOR UPDATE" if for_update else ""),
                              (resume_id,)).fetchone()
 
+    def list_user_resumes(self, user_id, conn=None):
+        with _c(conn) as c:
+            return c.execute(
+                """SELECT id, title, kind, created_at
+                   FROM resumes
+                   WHERE user_id=%s AND raw_text IS NOT NULL AND btrim(raw_text) <> ''
+                   ORDER BY created_at DESC, id DESC""",
+                (user_id,),
+            ).fetchall()
+
     def user_storage_bytes(self, user_id, conn=None):
         with _c(conn) as c:
             return int(c.execute("SELECT COALESCE(SUM(size_bytes),0) AS n FROM resumes WHERE user_id=%s",
@@ -198,9 +215,21 @@ class Repo:
                    VALUES (%s,%s,%s,%s,%s,%s) RETURNING *""",
                 (user_id, resume_id, jd_id, job_id, score, _j(suggestions))).fetchone()
 
-    def get_report(self, report_id, conn=None):
+    def get_report(self, report_id, conn=None, for_update=False):
         with _c(conn) as c:
-            return c.execute("SELECT * FROM analysis_reports WHERE id=%s", (report_id,)).fetchone()
+            return c.execute(
+                "SELECT * FROM analysis_reports WHERE id=%s" + (" FOR UPDATE" if for_update else ""),
+                (report_id,),
+            ).fetchone()
+
+    def get_matching_report(self, user_id, resume_id, jd_id, conn=None):
+        with _c(conn) as c:
+            return c.execute(
+                """SELECT id, ats_score, created_at FROM analysis_reports
+                   WHERE user_id=%s AND resume_id=%s AND jd_id=%s
+                   ORDER BY created_at DESC, id DESC LIMIT 1""",
+                (user_id, resume_id, jd_id),
+            ).fetchone()
 
     def pick_resource(self, skill_id, conn=None):
         with _c(conn) as c:
@@ -218,9 +247,144 @@ class Repo:
                     [(rm["id"], s, r, pos, h) for pos, (s, r, h) in enumerate(items, start=1)])
             return rm
 
+    def get_roadmap_for_report(self, user_id, report_id, conn=None):
+        with _c(conn) as c:
+            return c.execute(
+                """SELECT m.id, m.title, COALESCE(SUM(i.est_hours), 0) AS total_hours
+                   FROM roadmaps m
+                   JOIN analysis_reports requested ON requested.id=%s
+                   LEFT JOIN analysis_reports existing ON existing.id=m.report_id
+                   LEFT JOIN roadmap_items i ON i.roadmap_id=m.id
+                   WHERE m.user_id=%s
+                     AND (m.report_id=requested.id OR (
+                         existing.user_id=requested.user_id
+                         AND existing.resume_id=requested.resume_id
+                         AND existing.jd_id=requested.jd_id
+                     ))
+                   GROUP BY m.id
+                     ORDER BY m.id DESC LIMIT 1""",
+                (report_id, user_id),
+            ).fetchone()
+
+    def list_user_roadmaps(self, user_id, conn=None):
+        with _c(conn) as c:
+            rows = c.execute(
+                """SELECT m.id AS roadmap_id, m.title, m.created_at, m.jd_id, j.role_title,
+                          c.name AS company_name, m.report_id,
+                          i.id AS item_id, i.position, i.est_hours, i.status, i.completed_at,
+                          i.skill_id, s.name AS skill_name, js.importance, js.required,
+                          i.resource_id, r.title AS resource_title, r.url AS resource_url,
+                          r.kind AS resource_kind, matched.skills AS matched_skills,
+                          preferences.daily_study_hours, preferences.deadline_days,
+                          preferences.deadline_date
+                   FROM roadmaps m
+                   JOIN job_descriptions j ON j.id = m.jd_id
+                   JOIN companies c ON c.id = j.company_id
+                   LEFT JOIN analysis_reports ar ON ar.id = m.report_id
+                   LEFT JOIN roadmap_items i ON i.roadmap_id = m.id
+                   LEFT JOIN skills s ON s.id = i.skill_id
+                   LEFT JOIN jd_skills js ON js.jd_id = m.jd_id AND js.skill_id = i.skill_id
+                   LEFT JOIN resources r ON r.id = i.resource_id
+                   LEFT JOIN LATERAL (
+                       SELECT jsonb_agg(jsonb_build_object(
+                           'skill', sm.name::text,
+                           'importance', jsm.importance,
+                           'required', jsm.required
+                       ) ORDER BY jsm.importance DESC, sm.name) AS skills
+                       FROM jd_skills jsm
+                       JOIN skills sm ON sm.id = jsm.skill_id
+                       JOIN resume_skills rsm ON rsm.skill_id = jsm.skill_id
+                       WHERE jsm.jd_id = m.jd_id AND rsm.resume_id = ar.resume_id
+                   ) matched ON true
+                   LEFT JOIN LATERAL (
+                       SELECT (jb.payload->>'daily_study_hours')::integer AS daily_study_hours,
+                              (jb.payload->>'deadline_days')::integer AS deadline_days,
+                              jb.payload->>'deadline_date' AS deadline_date
+                       FROM jobs jb
+                       WHERE jb.job_type='PREP_PLAN'
+                         AND jb.status='DONE'
+                         AND jb.result->>'roadmap_id'=m.id::text
+                       ORDER BY jb.finished_at DESC, jb.id DESC LIMIT 1
+                   ) preferences ON true
+                   WHERE m.user_id=%s
+                   ORDER BY m.created_at DESC, m.id DESC, i.position""",
+                (user_id,),
+            ).fetchall()
+
+        roadmaps = {}
+        for row in rows:
+            roadmap = roadmaps.get(row["roadmap_id"])
+            if roadmap is None:
+                roadmap = {
+                    "id": row["roadmap_id"],
+                    "title": row["title"],
+                    "created_at": row["created_at"],
+                    "jd_id": row["jd_id"],
+                    "role_title": row["role_title"],
+                    "company_name": row["company_name"],
+                    "report_id": row["report_id"],
+                    "items": [],
+                    "matched_skills": row["matched_skills"] or [],
+                    "daily_study_hours": row["daily_study_hours"],
+                    "deadline_days": row["deadline_days"],
+                    "deadline_date": row["deadline_date"],
+                }
+                roadmaps[row["roadmap_id"]] = roadmap
+
+            if row["item_id"] is not None:
+                resource = None
+                if row["resource_id"] is not None:
+                    resource = {
+                        "id": row["resource_id"],
+                        "title": row["resource_title"],
+                        "url": row["resource_url"],
+                        "kind": row["resource_kind"],
+                    }
+                roadmap["items"].append({
+                    "id": row["item_id"],
+                    "position": row["position"],
+                    "skill_id": row["skill_id"],
+                    "skill": row["skill_name"],
+                    "importance": row["importance"],
+                    "required": row["required"],
+                    "est_hours": row["est_hours"],
+                    "status": row["status"],
+                    "completed_at": row["completed_at"],
+                    "resource": resource,
+                })
+
+        for roadmap in roadmaps.values():
+            items = roadmap["items"]
+            roadmap["total_hours"] = float(sum(item["est_hours"] for item in items))
+            roadmap["completed_hours"] = float(sum(
+                item["est_hours"] for item in items if item["status"] == "DONE"
+            ))
+            roadmap["remaining_hours"] = float(sum(
+                item["est_hours"] for item in items if item["status"] != "DONE"
+            ))
+            roadmap["completed_items"] = sum(item["status"] == "DONE" for item in items)
+            roadmap["completion_pct"] = round(
+                100 * roadmap["completed_items"] / len(items), 1
+            ) if items else 0.0
+        return list(roadmaps.values())
+
     def set_item_status(self, item_id, status, conn=None):
         with _c(conn) as c:
             return c.execute("UPDATE roadmap_items SET status=%s WHERE id=%s RETURNING *", (status, item_id)).fetchone()
+
+    def set_user_roadmap_item_status(self, item_id, user_id, status, conn=None):
+        with _c(conn) as c:
+            return c.execute(
+                """UPDATE roadmap_items i
+                   SET status=%s
+                   WHERE i.id=%s
+                     AND EXISTS (
+                         SELECT 1 FROM roadmaps m
+                         WHERE m.id=i.roadmap_id AND m.user_id=%s
+                     )
+                   RETURNING i.id, i.roadmap_id, i.status, i.completed_at""",
+                (status, item_id, user_id),
+            ).fetchone()
 
     # ------------------------------------------------------- jobs (queue)
     def enqueue_job(self, user_id, job_type, payload, priority=5, max_attempts=3, conn=None):

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
+from typing import Literal
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -69,6 +70,10 @@ class JobIn(BaseModel):
     )
     payload: dict = {}
     priority: int = Field(5, ge=0, le=10)
+
+
+class RoadmapItemStatusIn(BaseModel):
+    status: Literal["TODO", "IN_PROGRESS", "DONE"]
 
 
 def current_user(authorization: str | None = Header(None)):
@@ -296,6 +301,38 @@ def dashboard(user_id: int, user=Depends(current_user)):
     if user_id != user["id"]:
         raise HTTPException(403, "cannot access another user's dashboard")
     return core.repo.dashboard(user_id) or {}
+
+
+@app.get("/users/{user_id}/resumes")
+def user_resumes(user_id: int, user=Depends(current_user)):
+    if user_id != user["id"]:
+        raise HTTPException(403, "cannot access another user's resumes")
+    return core.repo.list_user_resumes(user_id)
+
+
+@app.get("/users/{user_id}/matching-analysis")
+def matching_analysis(user_id: int, resume_id: int, jd_id: int, user=Depends(current_user)):
+    if user_id != user["id"]:
+        raise HTTPException(403, "cannot access another user's analysis")
+    resume = core.repo.get_resume(resume_id)
+    if not resume or resume["user_id"] != user["id"]:
+        raise HTTPException(404, "resume not found")
+    return core.repo.get_matching_report(user["id"], resume_id, jd_id)
+
+
+@app.get("/users/{user_id}/roadmaps")
+def user_roadmaps(user_id: int, user=Depends(current_user)):
+    if user_id != user["id"]:
+        raise HTTPException(403, "cannot access another user's roadmaps")
+    return core.repo.list_user_roadmaps(user_id)
+
+
+@app.patch("/roadmap-items/{item_id}")
+def update_roadmap_item(item_id: int, update: RoadmapItemStatusIn, user=Depends(current_user)):
+    row = core.repo.set_user_roadmap_item_status(item_id, user["id"], update.status)
+    if not row:
+        raise HTTPException(404, "roadmap item not found")
+    return row
 
 
 # ---------------------------------------------------------

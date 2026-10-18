@@ -1,5 +1,8 @@
 """One handler per job type. Signature: handler(job: dict, ctx: JobContext) -> JSON-able dict.
 Handlers never touch threads or queues: that is the OS layer's job."""
+from datetime import date
+from math import ceil
+
 from .. import db
 from ..resume_pdf import generate_resume_pdf
 
@@ -116,12 +119,26 @@ def make_handlers(repo, ai, store, cache):
     def journey_guide(job, ctx):
         p = job["payload"]
         company_id = p.get("company_id")
-        if company_id is None and p.get("jd_id"):
-            company_id = repo.get_jd(p["jd_id"])["company_id"]
+        jd = None
+        if p.get("jd_id"):
+            jd = repo.get_jd(p["jd_id"])
+            if not jd:
+                raise JobError("job description not found")
+            if company_id is not None and company_id != jd["company_id"]:
+                raise JobError("job description does not belong to the selected company")
+            company_id = jd["company_id"]
+        if company_id is None:
+            raise JobError("select a company to view its hiring process")
+        company = repo.get_company(company_id)
+        if not company:
+            raise JobError("company not found")
         rounds = repo.get_rounds(company_id)
-        if not rounds:
-            raise JobError("no hiring-round data for this company yet")
-        return {"company_id": company_id, "total_rounds": len(rounds),
+        return {"company_id": company_id, "company_name": company["name"],
+                "jd_id": jd["id"] if jd else None,
+                "role_title": jd["role_title"] if jd else None,
+                "data_available": bool(rounds),
+                "note": None if rounds else "No hiring-round information is currently stored for this company.",
+                "total_rounds": len(rounds),
                 "rounds": [{"no": r["round_no"], "name": r["name"], "type": r["round_type"],
                             "what_to_expect": r["description"], "minutes": r["duration_min"],
                             "tips": r["tips"]} for r in rounds]}
@@ -129,16 +146,71 @@ def make_handlers(repo, ai, store, cache):
     # ------------------------------------------------ 4. prep planner
     def prep_plan(job, ctx):
         p = job["payload"]
+        try:
+            daily_hours = int(p.get("daily_study_hours", 2))
+        except (TypeError, ValueError) as error:
+            raise JobError("daily study time must be between 1 and 8 hours") from error
+        if not 1 <= daily_hours <= 8:
+            raise JobError("daily study time must be between 1 and 8 hours")
+
+        deadline_days = p.get("deadline_days")
+        deadline_date = p.get("deadline_date")
+        if deadline_days is not None:
+            try:
+                deadline_days = int(deadline_days)
+            except (TypeError, ValueError) as error:
+                raise JobError("choose a supported preparation deadline") from error
+            if deadline_days not in (7, 15, 30, 60):
+                raise JobError("choose a supported preparation deadline")
+        if deadline_date:
+            try:
+                deadline = date.fromisoformat(deadline_date)
+            except (TypeError, ValueError) as error:
+                raise JobError("enter a valid preparation deadline") from error
+            deadline_days = (deadline - date.today()).days
+            if deadline_days < 1:
+                raise JobError("preparation deadline must be at least one day from today")
+
+        def schedule(total_hours):
+            details = {
+                "daily_study_hours": daily_hours,
+                "estimated_study_days": ceil(total_hours / daily_hours) if total_hours else 0,
+            }
+            if deadline_days:
+                required_daily_hours = round(total_hours / deadline_days, 1)
+                details.update({
+                    "deadline_days": deadline_days,
+                    "deadline_date": deadline_date,
+                    "required_daily_hours": required_daily_hours,
+                    "deadline_feasible": required_daily_hours <= daily_hours,
+                })
+            return details
+
         with db.transaction() as conn:
-            report = repo.get_report(p["report_id"], conn)
+            report = repo.get_report(p["report_id"], conn, for_update=True)
             if not report or report["user_id"] != job["user_id"]:
                 raise JobError("report not found for this user")
+            resume = repo.get_resume(report["resume_id"], conn, for_update=True)
+            if not resume or resume["user_id"] != job["user_id"]:
+                raise JobError("resume not found for this user")
+            existing = repo.get_roadmap_for_report(job["user_id"], report["id"], conn)
+            if existing:
+                return {
+                    "roadmap_id": existing["id"],
+                    "reused_existing": True,
+                    "title": existing["title"],
+                    "total_hours": float(existing["total_hours"]),
+                    **schedule(float(existing["total_hours"])),
+                }
             gap = repo.skill_gap(report["resume_id"], report["jd_id"], conn)
             hours = {s["id"]: s["est_hours"] for s in catalog()}
             missing = sorted((g for g in gap if not g["matched"]),
                              key=lambda g: (not g["required"], -g["importance"], g["skill_name"]))
             if not missing:
-                return {"roadmap_id": None, "items": [], "note": "No skill gaps: you cover every listed skill."}
+                return {"roadmap_id": None, "items": [],
+                        "matched_skills": [g["skill_name"] for g in gap if g["matched"]],
+                        "note": "No skill gaps were found in this analysis.",
+                        **schedule(0)}
             items, picked = [], []
             for g in missing:
                 r = repo.pick_resource(g["skill_id"], conn)
@@ -149,6 +221,7 @@ def make_handlers(repo, ai, store, cache):
                              f"Prep plan: {jd['role_title']}" +
                              (f" @ {jd['company_name']}" if jd["company_name"] else ""), items, conn)
         return {"roadmap_id": rm["id"], "total_hours": sum(h for _, _, h in items),
+                **schedule(sum(h for _, _, h in items)),
                 "items": [{"position": i + 1, "skill": g["skill_name"], "required": g["required"],
                        "est_hours": items[i][2],
                        "resource": ({"title": picked[i]["title"], "url": picked[i]["url"],
