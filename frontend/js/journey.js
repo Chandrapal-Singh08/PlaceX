@@ -1,121 +1,57 @@
 (async function () {
   const $ = id => document.getElementById(id);
-  const uid = PX.session.userId();
-  if (!uid) return;
+  const uid = PX.session.userId(); if (!uid) return;
+  const qs = new URLSearchParams(location.search);
+  const companies = await PX.loadCompanies();
+  const byId = Object.fromEntries(companies.map(c => [c.id, c]));
+  const jd = JDInput.mount($("jd"), { title: "Provide the job description" });
 
-  const companySelect = $("company");
-  const roleSelect = $("role");
-  const roleOptions = [];
-  const companiesById = new Map();
-
-  function render(result) {
-    const rounds = [...(result.rounds || [])].sort((a, b) => a.no - b.no);
+  function unavailable(message) {
+    $("picker").hidden = false;
     $("result").hidden = false;
-    if (!result.data_available || !rounds.length) {
-      $("result").innerHTML = `<section class="glass empty">
-        <h2>${PX.esc(result.company_name || "Company")}</h2>
-        ${result.role_title ? `<p>Selected role: ${PX.esc(result.role_title)}</p>` : ""}
-        <p>${PX.esc(result.note || "No hiring-round information is currently stored for this company.")}</p>
-        <p class="muted">This means PlaceX has no round records to show; it does not mean the company has no hiring process.</p>
-      </section>`;
-      return;
-    }
-
-    const missing = "Not provided in the stored hiring-round data.";
-    $("result").innerHTML = `<section class="glass">
-      <h2>${PX.esc(result.company_name)}</h2>
-      ${result.role_title ? `<p>Role: <strong>${PX.esc(result.role_title)}</strong></p>` : ""}
-      <p class="muted">Showing ${rounds.length} configured hiring round${rounds.length === 1 ? "" : "s"} in sequence. These records may not reflect current company requirements.</p>
-      <div class="timeline">${rounds.map(round => {
-        const type = round.type ? round.type.replaceAll("_", " ") : null;
-        return `<article class="glass hover round">
-          <span class="num">${PX.esc(round.no)}</span>
-          <h3>${PX.esc(round.name || "Unnamed round")}</h3>
-          <div class="meta">
-            <span class="chip">${type ? PX.esc(type) : "Round type not provided"}</span>
-            <span class="chip">${round.minutes ? `${PX.esc(round.minutes)} min` : "Duration not provided"}</span>
-          </div>
-          <dl>
-            <div><dt>Description / expectations</dt><dd>${PX.esc(round.what_to_expect || missing)}</dd></div>
-            <div class="tipbox"><dt>Preparation tips</dt><dd>${PX.esc(round.tips || missing)}</dd></div>
-          </dl>
-        </article>`;
-      }).join("")}</div>
-    </section>`;
+    $("result").innerHTML = `<div class="glass empty" style="margin-top:1rem"><b>No hiring-process data available.</b><br>${PX.esc(message)}<br><a href="journey-guide.html">Try another job description</a></div>`;
   }
 
-  function updateRoles() {
-    const companyId = Number(companySelect.value);
-    const roles = roleOptions.filter(role => role.company_id === companyId);
-    roleSelect.innerHTML = `<option value="">All company roles</option>` +
-      roles.map(role => `<option value="${role.id}">${PX.esc(role.role_title)}</option>`).join("");
-    roleSelect.disabled = !companyId || roles.length === 0;
-    $("go").disabled = !companyId;
-  }
-
-  try {
-    const [companies, jobDescriptions] = await Promise.all([
-      API.companies(),
-      API.jobDescriptions()
-    ]);
-    companies.forEach(company => companiesById.set(company.id, company));
-    roleOptions.push(...jobDescriptions);
-    companySelect.innerHTML = `<option value="">Choose a company</option>` +
-      companies.map(company => `<option value="${company.id}">${PX.esc(company.name)}</option>`).join("");
-    if (!companies.length) {
-      companySelect.innerHTML = `<option value="">No companies are available</option>`;
-      $("result").hidden = false;
-      $("result").innerHTML = `<section class="glass empty">No company records are currently available in PlaceX.</section>`;
-    }
-  } catch (error) {
-    companySelect.innerHTML = `<option value="">Could not load companies</option>`;
+  function render(job) {
+    const r = job.result || {}, rounds = r.rounds || [], co = byId[r.company_id];
     $("result").hidden = false;
-    $("result").innerHTML = `<section class="glass empty">${PX.esc(error.message)}</section>`;
+    if (!rounds.length) return unavailable("No configured hiring rounds were returned for this company.");
+    $("result").innerHTML = `<p class="muted" style="margin-top:1.4rem">${PX.esc(co ? co.name : "Company #" + r.company_id)} · ${r.total_rounds} round${r.total_rounds === 1 ? "" : "s"}</p>
+      <div class="timeline">${rounds.map(x => `<article class="glass hover round"><span class="num">${String(x.no).padStart(2, "0")}</span>
+        <h3>${PX.esc(x.name)}</h3><div class="meta">${x.type ? `<span class="chip">${PX.esc(String(x.type).replace(/_/g, " "))}</span>` : ""}${x.minutes ? `<span class="chip">${x.minutes} min</span>` : ""}</div>
+        <dl>${x.what_to_expect ? `<div><dt>What to expect</dt><dd>${PX.esc(x.what_to_expect)}</dd></div>` : ""}${x.tips ? `<div class="tipbox"><dt>Tip</dt><dd>${PX.esc(x.tips)}</dd></div>` : ""}</dl></article>`).join("")}</div>`;
   }
 
-  companySelect.addEventListener("change", updateRoles);
-  $("go").addEventListener("click", async () => {
-    const companyId = Number(companySelect.value);
-    if (!companyId || !companiesById.has(companyId)) return;
-    const payload = { company_id: companyId };
-    if (roleSelect.value) payload.jd_id = Number(roleSelect.value);
-
+  async function run(payloadFactory) {
     $("result").hidden = true;
-    const progress = PX.progress($("progress"), "Loading configured hiring rounds");
+    const p = PX.progress($("progress"), "Preparing the hiring journey");
     try {
-      const job = await API.runJob(uid, "JOURNEY_GUIDE", payload, progress.tick, 5);
-      progress.done();
-      render(job.result || {});
-      history.replaceState(null, "", "?job=" + job.id);
-    } catch (error) {
-      progress.done();
-      PX.toast(error.kind === "job" ? "Could not load this hiring process: " + error.message : error.message, "error", 7000);
-      $("result").hidden = false;
-      $("result").innerHTML = `<section class="glass empty">${PX.esc(error.message)}</section>`;
+      const payload = await payloadFactory(p);
+      if (!payload) { p.done(); return; }
+      p.label("Loading configured hiring rounds");
+      const job = await API.runJob(uid, "JOURNEY_GUIDE", payload, p.tick, 5);
+      p.done(); render(job); history.replaceState(null, "", "?job=" + job.id); PX.toast("Journey guide ready.", "success");
+    } catch (e) {
+      p.done();
+      if (/no hiring-round data/i.test(e.message)) return unavailable("No hiring rounds are configured for this company.");
+      PX.toast(e.kind === "job" ? "Job failed: " + e.message : e.message, "error", 7000);
     }
+  }
+
+  $("go").addEventListener("click", () => {
+    if (!jd.isFilled()) return PX.toast("Choose or provide a job description first.", "error");
+    run(async progress => {
+      progress.label("Reading the job description");
+      const value = await jd.resolve();
+      if (value.company_matched === false) {
+        unavailable("This job description does not name a company with hiring data in PlaceX.");
+        return null;
+      }
+      return { jd_id: value.id };
+    });
   });
 
-  const jobId = new URLSearchParams(location.search).get("job");
-  if (jobId) {
-    try {
-      const job = await API.getJob(jobId);
-      if (job.job_type !== "JOURNEY_GUIDE" || job.status !== "DONE") return;
-      const result = job.result || {};
-      if (result.company_id && companiesById.has(result.company_id)) {
-        companySelect.value = String(result.company_id);
-        updateRoles();
-        if (result.jd_id) roleSelect.value = String(result.jd_id);
-      }
-      render(result);
-    } catch (error) {
-      PX.toast(error.message, "error");
-    }
-  } else {
-    const companyId = Number(new URLSearchParams(location.search).get("company"));
-    if (companyId && companiesById.has(companyId)) {
-      companySelect.value = String(companyId);
-      updateRoles();
-      $("go").click();
-    }
-  }
+  const q = qs.get("job");
+  if (q) { try { const j = await API.getJob(q); if (j.job_type === "JOURNEY_GUIDE" && j.status === "DONE") render(j); } catch (e) { PX.toast(e.message, "error"); } }
+  else if (qs.get("company")) run(async () => ({ company_id: Number(qs.get("company")) }));
 })();
