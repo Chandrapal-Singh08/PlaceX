@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Build Resume — PlaceX</title><link rel="stylesheet" href="css/global.css"><link rel="stylesheet" href="css/builder.css"></head>
+<body data-page="build" data-auth="required">
+<div class="app"><aside id="sidebar"></aside>
+<main class="content">
+  <div class="page-head"><h1>Build Your Resume</h1><p>Tell us what you've done and which job you're aiming for. We'll show which required skills you cover and generate a resume.</p></div>
+  <div id="progress" hidden></div>
+  <div class="two" id="work">
+    <form class="glass" id="form" novalidate>
+      <div id="jd"></div>
+      <div class="grid g2"><label class="field"><span>Full name</span><input id="pName" autocomplete="name"></label><label class="field"><span>Email</span><input id="pEmail" type="email" autocomplete="email"></label></div>
+      <label class="field"><span>Education <small>(one per line, optional)</small></span><textarea id="pEdu" placeholder="B.Tech CSE, Your University"></textarea></label>
+      <div class="field"><span>Skills <small>(press Enter or comma after each)</small></span><div class="tagbox" id="tagbox"><input id="tagIn" placeholder="e.g. Python, Git" aria-label="Add skill"></div></div>
+      <div class="field"><span>Projects</span><div id="projects"></div><button type="button" class="btn ghost sm" id="addProj" style="align-self:flex-start">Add project</button></div>
+      <label class="field"><span>Experience <small>(one item per line)</small></span><textarea id="pExp" placeholder="Developed backend APIs using Python and FastAPI"></textarea></label>
+      <label class="field"><span>Certifications <small>(one per line, optional)</small></span><textarea id="pCert" placeholder="Only include certifications you have earned"></textarea></label>
+      <label class="field"><span>Achievements <small>(one per line, optional)</small></span><textarea id="pAchievements" placeholder="Awards, recognition, or other achievements"></textarea></label>
+      <label class="field"><span>Relevant coursework <small>(one per line, optional)</small></span><textarea id="pCoursework" placeholder="Courses you have completed"></textarea></label>
+      <label class="field"><span>Focus areas <small>(optional)</small></span><input id="pFocus" placeholder="e.g. backend, databases"><small class="muted">Sent with your profile. The current keyword-based backend doesn't use it yet.</small></label>
+      <button class="btn" type="submit" id="submit">Generate resume</button>
+    </form>
+    <section class="glass resultbox" id="out"><h2>Generated resume</h2><div class="empty">No data available yet. Fill in the form and generate your resume.</div></section>
+  </div>
+</main></div>
+<script src="js/config.js?v=4"></script><script src="js/api.js?v=6"></script><script src="js/core.js"></script><script src="js/jd-input.js"></script><script src="js/builder.js?v=4"></script>
+</body></html>

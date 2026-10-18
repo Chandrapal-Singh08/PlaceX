@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Create your account — PlaceX</title><link rel="stylesheet" href="css/global.css"><link rel="stylesheet" href="css/auth.css"></head>
+<body><div class="auth">
+<aside class="auth-side"><a class="brand" href="index.html"><span class="logo-mark"></span>PlaceX</a>
+<div><h2>Your placement journey starts with one upload.</h2><ul><li>ATS score from your own resume</li><li>Skill gaps with study hours</li><li>Round-by-round interview guide</li></ul></div>
+<small class="muted">Placement preparation for students</small></aside>
+<main class="auth-main"><div class="glass auth-card">
+<h1>Create your account</h1><p class="muted">Set up your student profile in a few seconds.</p>
+<div class="demo-note">Use a password with at least 12 characters.</div>
+<form id="authForm" novalidate>
+<label class="field"><span>Full name</span><input name="full_name" autocomplete="name" required placeholder="Your name"></label>
+<label class="field"><span>Email</span><input type="email" name="email" autocomplete="email" required placeholder="you@college.edu"></label>
+<label class="field"><span>Password</span><input type="password" name="password" autocomplete="new-password" minlength="12" required></label>
+<label class="field"><span>Roll number <small>(optional)</small></span><input name="roll_no" placeholder="e.g. 240000000"></label>
+<button class="btn" id="submitBtn" data-label="Create account" type="submit">Create account</button></form>
+<p class="switch">Already registered? <a href="login.html">Sign in</a></p>
+</div></main></div>
+<script src="js/config.js?v=2"></script><script src="js/api.js?v=5"></script><script src="js/core.js?v=2"></script><script src="js/auth.js?v=4"></script>
+</body></html>
