@@ -1,5 +1,4 @@
 """PlaceXCore wires DB + OS layers together. The API / CLI / tests all talk to this."""
-import logging
 import os
 import pathlib
 import re
@@ -7,17 +6,9 @@ import tempfile
 import time
 
 from . import db
-from .ai.llm import create_llm_service
 from .ai.stub import KeywordBackend
 from .ai.textract import extract_text
 from .config import Config
-from .job_sources import JobSearchFilters, create_job_provider
-from .matching import (
-    EmbeddingSemanticMatcher,
-    SentenceTransformerProvider,
-    SemanticMatchingError,
-    build_matching_report,
-)
 from .os_layer.filestore import FileStore, UploadRejected
 from .os_layer.memory import LRUCache, ModelRegistry
 from .os_layer.monitor import ResourceMonitor, default_probe
@@ -25,67 +16,21 @@ from .os_layer.policies import make_policy
 from .os_layer.queue import BoundedJobQueue, QueuedJob, QueueFull
 from .os_layer.worker import PoolStats, WorkerPool
 from .repo import Repo
-from .research import create_research_service
 from .tasks.handlers import make_handlers
-
-logger = logging.getLogger(__name__)
 
 class Backpressure(Exception):
     """Server is saturated: caller should retry later (HTTP 503)."""
 
 class PlaceXCore:
-    def __init__(
-        self, cfg: Config | None = None, ai=None, probe=default_probe, llm=None,
-        semantic_matcher=None,
-    ):
+    def __init__(self, cfg: Config | None = None, ai=None, probe=default_probe):
         self.cfg = cfg or Config()
-        self.llm = llm if llm is not None else create_llm_service(self.cfg)
-        self.semantic_matcher = semantic_matcher
-        if self.semantic_matcher is None and self.cfg.embeddings_enabled:
-            provider = SentenceTransformerProvider(
-                self.cfg.embedding_model,
-                self.cfg.embedding_device,
-                self.cfg.embedding_local_files_only,
-            )
-            self.semantic_matcher = EmbeddingSemanticMatcher(
-                provider, self.cfg.embedding_similarity_threshold
-            )
-        self.job_provider = None
+        db.init_pool(self.cfg.dsn, min_size=2, max_size=self.cfg.workers * 2 + 8)
         try:
-            db.init_pool(
-                self.cfg.dsn,
-                min_size=self.cfg.db_pool_min_size,
-                max_size=self.cfg.db_pool_max_size,
-                wait_timeout=self.cfg.db_pool_wait_timeout_s,
-                connect_timeout=self.cfg.db_connect_timeout_s,
-                reconnect_timeout=self.cfg.db_reconnect_timeout_s,
-            )
-            try:
-                db.ensure_auth_schema()
-            except db.DatabaseUnavailable as error:
-                logger.warning(
-                    "database_auth_schema_check_failed category=%s; "
-                    "backend is starting in degraded mode",
-                    error.category,
-                )
-            self.job_provider = create_job_provider(self.cfg)
+            db.ensure_auth_schema()
         except Exception:
             db.close_pool()
-            if self.llm is not None:
-                self.llm.close()
-            if self.job_provider is not None:
-                self.job_provider.close()
             raise
         self.repo = Repo()
-        try:
-            self.research = create_research_service(self.cfg, self.repo)
-        except Exception:
-            db.close_pool()
-            if self.llm is not None:
-                self.llm.close()
-            if self.job_provider is not None:
-                self.job_provider.close()
-            raise
         self.ai = ai or KeywordBackend()
         self.store = FileStore(self.cfg.upload_dir, self.cfg.max_upload_mb * 1_048_576,
                                self.cfg.user_quota_mb * 1_048_576)
@@ -93,33 +38,16 @@ class PlaceXCore:
         self.models = ModelRegistry()
         self.queue = BoundedJobQueue(self.cfg.queue_capacity, make_policy(self.cfg.policy, self.cfg.aging_seconds))
         self.stats = PoolStats()
-        self.handlers = make_handlers(
-            self.repo,
-            self.ai,
-            self.store,
-            self.cache,
-            self.llm,
-            matching_weights=self.cfg.matching_weights,
-            semantic_matcher=self.semantic_matcher,
-            research=self.research,
-        )
+        self.handlers = make_handlers(self.repo, self.ai, self.store, self.cache)
         self.pool = WorkerPool(self.cfg, self.queue, self.repo, self.handlers, self.stats)
         self.monitor = ResourceMonitor(self.cfg, self.queue, self.stats, on_event=self._log_system, probe=probe)
         self.recovered = 0
 
     # -------------------------------------------------------- lifecycle
     def start(self):
-        try:
-            self.recovered = len(self.repo.recover_jobs())
-            for r in self.repo.load_ready_jobs():            # jobs that survived a restart
-                self.queue.put(QueuedJob(r["id"], r["priority"], r["job_type"]), force=True)
-        except db.DatabaseUnavailable as error:
-            self.recovered = 0
-            logger.warning(
-                "database_job_recovery_failed category=%s; "
-                "workers will accept jobs when the database is available",
-                error.category,
-            )
+        self.recovered = len(self.repo.recover_jobs())
+        for r in self.repo.load_ready_jobs():                # jobs that survived a restart
+            self.queue.put(QueuedJob(r["id"], r["priority"], r["job_type"]), force=True)
         self.pool.start()
         self.monitor.start()
         return self
@@ -127,12 +55,6 @@ class PlaceXCore:
     def stop(self):
         self.monitor.stop()
         self.pool.stop()
-        if self.llm is not None:
-            self.llm.close()
-        if self.job_provider is not None:
-            self.job_provider.close()
-        if self.research is not None:
-            self.research.close()
         db.close_pool()
 
     def _log_system(self, action, details):
@@ -218,194 +140,6 @@ class PlaceXCore:
             "company_matched": company is not None,
             "skills": [names[skill_id] for skill_id, _ in found],
         }
-
-    def discover_jobs(self, filters: JobSearchFilters) -> dict:
-        if self.job_provider is None:
-            return {
-                "provider_configured": False,
-                "message": "Configure a permitted JSON job API or feed with PLACEX_JOB_PROVIDER_URL.",
-                "jobs": self.repo.list_external_jobs(filters),
-            }
-        listings = self.job_provider.search(filters)
-        saved = []
-        catalog = self.repo.list_skills()
-        for listing in listings:
-            found = self.ai.extract_skills(
-                " ".join([listing.role_title, listing.description, *listing.skills]),
-                catalog,
-            )
-            saved.append(self.repo.upsert_external_job(
-                listing=listing,
-                source_name=self.job_provider.name,
-                skill_ids=[skill_id for skill_id, _ in found],
-            ))
-        return {
-            "provider_configured": True,
-            "provider": self.job_provider.name,
-            "fetched": len(saved),
-            "jobs": self.repo.list_external_jobs(filters),
-        }
-
-    def get_job_recommendations(self, user_id: int, resume_id: int | None = None):
-        resume = (
-            self.repo.get_owned_resume(user_id, resume_id)
-            if resume_id is not None
-            else self.repo.latest_readable_resume(user_id)
-        )
-        if not resume or not (resume["raw_text"] or "").strip():
-            return {"resume_id": None, "recommendations": [], "message": "Upload a readable resume to get recommendations."}
-        preferences = self.repo.get_job_preferences(user_id)
-        catalog = self.repo.list_skills()
-        resume_skills = self.ai.extract_skills(resume["raw_text"], catalog)
-        skill_names = {item["id"]: item["name"] for item in catalog}
-        resume_pairs = {skill_id for skill_id, _ in resume_skills}
-        dismissed_job_ids = self.repo.dismissed_recommendation_job_ids(
-            user_id, resume["id"]
-        )
-        recommendations = []
-        for job in self.repo.list_external_jobs(limit=100):
-            if job["id"] in dismissed_job_ids:
-                continue
-            if not self._matches_job_preferences(job, preferences):
-                continue
-            job_text = " ".join([job["role_title"], job["description"], *(job["skills"] or [])])
-            job_skills = self.ai.extract_skills(job_text, catalog)
-            gap = [{
-                "skill_id": skill_id,
-                "skill_name": skill_names[skill_id],
-                "importance": 3,
-                "required": True,
-                "matched": skill_id in resume_pairs,
-            } for skill_id, _ in job_skills]
-            evidence_fn = getattr(self.ai, "extract_skill_evidence", None)
-            skill_evidence = evidence_fn(resume["raw_text"], catalog) if evidence_fn else []
-            semantic_matches = {}
-            semantic_status = "unavailable"
-            if self.semantic_matcher is not None:
-                try:
-                    semantic_matches = self.semantic_matcher.match(
-                        resume["raw_text"],
-                        [item["skill_name"] for item in gap if not item["matched"]],
-                    )
-                    semantic_status = "available"
-                except SemanticMatchingError:
-                    logger.warning("Semantic recommendations unavailable for job listing %s", job["id"])
-            details = build_matching_report(
-                gap,
-                resume["raw_text"],
-                job["description"],
-                skill_evidence=skill_evidence,
-                semantic_matches=semantic_matches,
-                semantic_status=semantic_status,
-                weights=self.cfg.matching_weights,
-            )
-            matching_basis = "skills_only_preliminary"
-            prior_report = self.repo.get_matching_report(
-                user_id, resume["id"], job["jd_id"]
-            ) if job["jd_id"] is not None else None
-            if prior_report and prior_report["matching_details"]:
-                prior_details = prior_report["matching_details"]
-                if prior_details.get("overall_match_score") is not None:
-                    details = prior_details
-                    matching_basis = "existing_hybrid_analysis"
-            if details["overall_match_score"] is None:
-                continue
-            score = details["overall_match_score"]
-            category = (
-                "STRONG_MATCH" if score >= 75
-                else "ACHIEVABLE_MATCH" if score >= 40
-                else "SKILL_BUILDING"
-            )
-            matched = [item["skill_name"] for item in gap if item["matched"]]
-            missing = [item["skill_name"] for item in gap if not item["matched"]]
-            reasons = []
-            if matched:
-                reasons.append("Resume evidence matches: " + ", ".join(matched[:8]) + ".")
-            if missing:
-                reasons.append("Skills to develop: " + ", ".join(missing[:8]) + ".")
-            if preferences and preferences.get("preferred_roles"):
-                reasons.append("Role is shown alongside your preferred role searches.")
-            if matching_basis == "skills_only_preliminary":
-                reasons.append(
-                    "Preliminary skill-based estimate; run Resume Analyzer for a full evidence-backed report."
-                )
-            if not reasons:
-                reasons.append(
-                    "This source-reported listing can help you explore requirements for your target role."
-                )
-            record = {
-                "user_id": user_id,
-                "resume_id": resume["id"],
-                "external_job_id": job["id"],
-                "match_score": score,
-                "category": category,
-                "reasons": reasons,
-                "matching_details": details,
-            }
-            saved_recommendation = self.repo.save_job_recommendation(record)
-            recommendations.append({
-                **job,
-                "recommendation_id": saved_recommendation["id"],
-                "resume_id": resume["id"],
-                "matching_basis": matching_basis,
-                "match_score": score,
-                "category": category,
-                "matching_skills": matched,
-                "partially_matched_skills": details["partially_matched_skills"],
-                "missing_skills": [
-                    name for name in missing
-                    if name not in details["missing_skills"]
-                ] + details["missing_skills"],
-                "matching_details": details,
-                "reasons": reasons,
-                "eligibility_information": {
-                    "experience": job["experience_requirements"],
-                    "education": job["education_requirements"],
-                    "status": (
-                        details.get("eligibility_state", "not_assessed")
-                        if matching_basis == "existing_hybrid_analysis"
-                        else "not_assessed"
-                    ),
-                    "note": (
-                        "Eligibility evidence comes from the existing hybrid analysis; confirm requirements with the employer."
-                        if matching_basis == "existing_hybrid_analysis"
-                        else "The resume may not state all qualifications; verify eligibility with the employer."
-                    ),
-                },
-                "recommended_next_steps": [
-                    f"Review the source listing and confirm its requirements: {job['source_url']}",
-                    *(f"Build evidence for {name} through a project or coursework." for name in missing[:3]),
-                ],
-            })
-        recommendations.sort(key=lambda item: (-item["match_score"], item["role_title"].casefold()))
-        return {"resume_id": resume["id"], "recommendations": recommendations}
-
-    @staticmethod
-    def _matches_job_preferences(job: dict, preferences: dict | None) -> bool:
-        if not preferences:
-            return True
-        remote = preferences["remote_preference"]
-        if remote == "REMOTE" and not job["is_remote"]:
-            return False
-        if remote == "ONSITE" and job["is_remote"]:
-            return False
-        locations = preferences["preferred_locations"]
-        if locations and not any(
-            item.casefold() in (job["location"] or "").casefold()
-            or item.casefold() == "remote" and job["is_remote"]
-            for item in locations
-        ):
-            return False
-        roles = preferences["preferred_roles"]
-        if roles and not any(item.casefold() in job["role_title"].casefold() for item in roles):
-            return False
-        employment_types = preferences["employment_types"]
-        if employment_types and (job["employment_type"] or "").casefold() not in {
-            item.casefold() for item in employment_types
-        }:
-            return False
-        experience = preferences["experience_level"]
-        return not experience or experience.casefold() == (job["experience_level"] or "").casefold()
 
     def wait(self, job_id, timeout=30.0, poll=0.05) -> dict:
         end = time.monotonic() + timeout
