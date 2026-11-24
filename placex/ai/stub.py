@@ -55,6 +55,27 @@ class KeywordBackend(AIBackend):
                 found.append((s["id"], round(min(1.0, 0.6 + 0.1 * hits), 3)))
         return found
 
+    def extract_skill_evidence(self, text, catalog):
+        evidence = []
+        for skill in catalog:
+            terms = [skill["name"], *skill["aliases"]]
+            patterns = self._compiled.get(skill["id"])
+            if patterns is None:
+                patterns = self._compiled[skill["id"]] = [_pattern(term) for term in terms]
+            hits = []
+            for term, pattern in zip(terms, patterns):
+                for match in pattern.finditer(text):
+                    hits.append({
+                        "skill_id": skill["id"],
+                        "skill_name": skill["name"],
+                        "matched_term": term,
+                        "evidence": match.group(0),
+                        "start": match.start(),
+                        "end": match.end(),
+                    })
+            evidence.extend(sorted(hits, key=lambda item: item["start"])[:5])
+        return evidence
+
     def suggest_improvements(self, gap, score):
         missing = [g for g in gap if not g["matched"]]
         tips = []
@@ -75,12 +96,14 @@ class KeywordBackend(AIBackend):
         contact = [_markdown_text(profile.get(key)) for key in ("email", "phone", "location", "linkedin", "website")]
         contact = [value for value in contact if value]
         role = _markdown_text(jd.get("role_title") or "the target role")
-        summary = f"Student targeting a {role} position"
-        if matched:
-            summary += " with demonstrated skills in " + ", ".join(
-                _markdown_text(skill) for skill in matched[:5]
-            )
-        summary += "."
+        summary = _clean(profile.get("_llm_summary"))
+        if not summary:
+            summary = f"Student targeting a {role} position"
+            if matched:
+                summary += " with demonstrated skills in " + ", ".join(
+                    _markdown_text(skill) for skill in matched[:5]
+                )
+            summary += "."
 
         supplied_skills = _list_values(profile, "skills")
         canonical_supported = [
@@ -90,6 +113,9 @@ class KeywordBackend(AIBackend):
         skills = list(dict.fromkeys(relevant + canonical_supported + supplied_skills))
         education = _list_values(profile, "education")
         experience = _list_values(profile, "experience")
+        rewritten_experience = profile.get("_llm_experience_bullets")
+        if isinstance(rewritten_experience, list) and len(rewritten_experience) == len(experience):
+            experience = [_clean(value) for value in rewritten_experience]
         projects = profile.get("projects", [])
         certifications = _list_values(profile, "certifications")
         achievements = _list_values(profile, "achievements")
@@ -108,12 +134,15 @@ class KeywordBackend(AIBackend):
                 lines += ["", f"## {title}"]
                 lines.extend(f"- {_markdown_text(value)}" for value in values)
         project_lines = []
-        for project in projects:
+        rewritten_projects = profile.get("_llm_project_bullets", {})
+        for index, project in enumerate(projects):
             project_name = _markdown_text(project.get("name"))
             if project_name:
                 project_lines.append(f"**{project_name}**")
+            points = rewritten_projects.get(index) if isinstance(rewritten_projects, dict) else None
+            description = "\n".join(points) if isinstance(points, list) else project.get("description", "")
             project_lines.extend(
-                f"- {_markdown_text(point)}" for point in _project_points(project.get("description", ""))
+                f"- {_markdown_text(point)}" for point in _project_points(description)
             )
         if project_lines:
             lines += ["", "## Projects", *project_lines]
