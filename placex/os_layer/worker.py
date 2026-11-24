@@ -1,10 +1,12 @@
 """Worker pool: N threads consuming from the queue, with mutex-protected shared stats."""
+import logging
 import threading
 import time
-import traceback
 from collections import Counter
 
-from .queue import BoundedJobQueue, QueuedJob
+from .queue import BoundedJobQueue, QueueFull, QueuedJob
+
+logger = logging.getLogger(__name__)
 
 class JobTimeout(Exception):
     pass
@@ -87,11 +89,20 @@ class WorkerPool:
             try:
                 job = self.repo.claim_job(qj.job_id, name)   # atomic: only one worker wins
             except Exception:
-                traceback.print_exc()
+                logger.exception("Could not claim queued job %s; it will be retried", qj.job_id)
+                self._schedule_requeue(qj, self.cfg.retry_backoff_s)
                 continue
             if job is None:          # cancelled, or already taken -> skip
                 continue
-            self._run(job, name)
+            try:
+                self._run(job, name)
+            except Exception:
+                logger.exception(
+                    "Worker %s could not record the outcome for job %s; "
+                    "the database recovery check will handle it after restart",
+                    name,
+                    qj.job_id,
+                )
 
     def _run(self, job: dict, name: str):
         self.stats.started()
@@ -103,6 +114,21 @@ class WorkerPool:
             self.repo.finish_job(job["id"], result)
             outcome = "done"
         except Exception as e:                                # noqa: BLE001
+            if job["job_type"] == "JOURNEY_GUIDE":
+                logger.error(
+                    "worker_job_failure job_id=%s operation=journey_guide "
+                    "failure_stage=handler_or_result_commit exception_class=%s "
+                    "safe_error=Journey Guide operation failed; see stage diagnostic",
+                    job["id"],
+                    type(e).__name__,
+                )
+            else:
+                logger.exception(
+                    "Job %s (%s) failed on attempt %s",
+                    job["id"],
+                    job["job_type"],
+                    job["attempts"],
+                )
             msg = f"{type(e).__name__}: {e}"
             row = self.repo.fail_job(job["id"], msg)
             if row and row["status"] == "READY":              # DB decided: retry
@@ -116,13 +142,22 @@ class WorkerPool:
     def _requeue_later(self, row: dict):
         delay = self.cfg.retry_backoff_s * (2 ** (row["attempts"] - 1))   # exponential backoff
         qj = QueuedJob(row["id"], row["priority"], row["job_type"])
+
+        self._schedule_requeue(qj, delay)
+
+    def _schedule_requeue(self, job: QueuedJob, delay: float):
         def fire():
             try:
-                self.queue.put(qj, force=True)
-            except Exception:
-                pass          # queue closed on shutdown; recover_jobs() picks it up next start
+                self.queue.put(job, force=True)
+            except QueueFull:
+                logger.debug("Job %s was not requeued because the queue is closed", job.job_id)
+            finally:
+                with self._timers_lock:
+                    self._timers.discard(timer)
+
         t = threading.Timer(delay, fire)
         t.daemon = True
         with self._timers_lock:
             self._timers.add(t)
+        timer = t
         t.start()
