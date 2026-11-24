@@ -35,8 +35,12 @@
 
     API.jobDescriptions().then(items => {
       select.innerHTML = items.length
-        ? items.map(item => `<option value="${item.id}">${item.company_name ? PX.esc(item.company_name) + " · " : ""}${PX.esc(item.role_title)}</option>`).join("")
+        ? items.map(item => `<option value="${item.id}">${item.company_name ? PX.esc(item.company_name) + " · " : ""}${PX.esc(item.role_title)} · ${PX.esc((item.data_classification || "unverified").replaceAll("_", " "))}</option>`).join("")
         : '<option value="">No existing job descriptions</option>';
+      const selectedJd = Number(new URLSearchParams(location.search).get("jd_id"));
+      if (selectedJd && items.some(item => item.id === selectedJd)) {
+        select.value = String(selectedJd);
+      }
       if (!items.length) {
         query('input[value="existing"]').disabled = true;
         query('input[value="text"]').checked = true;

@@ -59,7 +59,7 @@
       const r = await API.uploadResume(uid, file);                    // POST /users/{id}/resumes
       PX.toast("Upload successful.", "success");
       readyToAnalyze(r.id, "Uploaded " + (r.title || file.name));
-      if (!r.raw_text) PX.toast("No text could be read from this file, so analysis may fail. Try DOCX or TXT.", "error", 7000);
+      if (!r.has_text) PX.toast("No text could be read from this file, so analysis may fail. Try DOCX or TXT.", "error", 7000);
     } catch (e) { PX.toast(e.message, "error"); $("uploadBtn").disabled = false; }
     $("uploadBtn").textContent = "Upload resume";
   });

@@ -19,7 +19,7 @@
       case 415: return d || "That file type isn't supported. Use PDF, DOCX, TXT or MD.";
       case 422: return d || "Some fields are missing or invalid. Check the form and try again.";
       case 429: return "Too many requests. Wait a moment and try again.";
-      case 503: return "The server is busy. Retrying in a moment usually works.";
+      case 503: return d || "The server is busy. Retrying in a moment usually works.";
       default:  return status >= 500 ? "Something went wrong on the server. Try again shortly." : (d || "Request failed.");
     }
   }
@@ -28,12 +28,22 @@
     const headers = new Headers(opts.headers || {});
     const token = window.PX?.session.token();
     if (token) headers.set("Authorization", "Bearer " + token);
-    opts = { ...opts, headers };
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      C.REQUEST_TIMEOUT_MS || 15000
+    );
+    opts = { ...opts, headers, signal: controller.signal };
     let res;
     try {
       res = await fetch(BASE + path, opts);
     } catch (e) {
-      throw new ApiError("Can't reach the PlaceX backend at " + BASE + ". Make sure it's running and CORS allows this origin.", 0, "network");
+      if (e.name === "AbortError") {
+        throw new ApiError("The PlaceX request timed out. Check the service and retry.", 0, "timeout");
+      }
+      throw new ApiError("Can't reach the PlaceX backend at " + BASE + ". Make sure it's running and allows this local origin.", 0, "network");
+    } finally {
+      clearTimeout(timeout);
     }
     let body = null;
     const text = await res.text();
@@ -41,7 +51,7 @@
     if (!res.ok) {
       let detail = body && body.detail;
       if (Array.isArray(detail)) detail = null;        // pydantic validation list -> generic message
-      throw new ApiError(friendly(res.status, detail), res.status);
+      throw new ApiError(friendly(res.status, detail), res.status, body?.code || "http");
     }
     return body;
   }
@@ -53,6 +63,11 @@
     login: (email, password) => request("/auth/login", json("POST", { email, password })),
     logout: () => request("/auth/logout", { method: "POST" }),
     jobDescriptions: () => request("/job-descriptions"),
+    journeyGuides: userId => request(`/users/${userId}/journey-guides`),
+    journeyGuide: guideId => request(`/journey-guides/${guideId}`),
+    journeyRoadmap: (guideId, preferences) => request(
+      `/journey-guides/${guideId}/roadmap`, json("POST", preferences || {})
+    ),
     createJd: ({ text, file }) => {
       const form = new FormData();
       if (file) form.append("file", file);
@@ -77,7 +92,7 @@
         if (text) { try { body = JSON.parse(text); } catch { body = text; } }
         let detail = body && body.detail;
         if (Array.isArray(detail)) detail = null;
-        throw new ApiError(friendly(res.status, detail), res.status);
+        throw new ApiError(friendly(res.status, detail), res.status, body?.code || "http");
       }
       return res.blob();
     },
@@ -85,6 +100,26 @@
     getJob: (id) => request(`/jobs/${id}`),
     cancelJob: (id, userId) => request(`/jobs/${id}` + (userId ? `?user_id=${userId}` : ""), { method: "DELETE" }),
     dashboard: (userId) => request(`/users/${userId}/dashboard`),
+    resumes: (userId) => request(`/users/${userId}/resumes`),
+    jobListings: filters => {
+      const query = new URLSearchParams(filters || {});
+      return request("/job-listings" + (query.size ? `?${query}` : ""));
+    },
+    discoverJobs: filters => request("/job-discovery/search", json("POST", filters || {})),
+    jobPreferences: userId => request(`/users/${userId}/job-preferences`),
+    saveJobPreferences: (userId, preferences) => request(`/users/${userId}/job-preferences`, json("PUT", preferences)),
+    recommendations: userId => request(`/users/${userId}/recommendations`),
+    dismissRecommendation: (userId, recommendationId) => request(`/users/${userId}/recommendations/${recommendationId}/dismiss`, { method: "POST" }),
+    applications: userId => request(`/users/${userId}/applications`),
+    createApplication: (userId, job) => request(`/users/${userId}/applications`, json("POST", job)),
+    updateApplication: (applicationId, updates) => request(`/applications/${applicationId}`, json("PATCH", updates)),
+    applicationEvents: applicationId => request(`/applications/${applicationId}/events`),
+    placementDashboard: userId => request(`/users/${userId}/placement-dashboard`),
+    matchingAnalysis: (userId, resumeId, jdId) => request(
+      `/users/${userId}/matching-analysis?resume_id=${encodeURIComponent(resumeId)}&jd_id=${encodeURIComponent(jdId)}`
+    ),
+    roadmaps: (userId) => request(`/users/${userId}/roadmaps`),
+    updateRoadmapItem: (itemId, status) => request(`/roadmap-items/${itemId}`, json("PATCH", { status })),
     companies: () => request("/companies"),
     system: () => request("/system"),
 
@@ -109,6 +144,17 @@
       PX.history.add(j.id, job_type);
       if (onTick) onTick(j, 0);
       return API.waitForJob(j.id, onTick);
+    },
+    async generateJourneyGuide(payload, onTick) {
+      const job = await request("/journey-guides", json("POST", payload));
+      PX.history.add(job.id, "JOURNEY_GUIDE");
+      if (onTick) onTick(job, 0);
+      try {
+        return await API.waitForJob(job.id, onTick);
+      } catch (error) {
+        if (error.kind !== "job") error.jobId = job.id;
+        throw error;
+      }
     },
 
     resumeDownloadUrl(resumeId, format) {
