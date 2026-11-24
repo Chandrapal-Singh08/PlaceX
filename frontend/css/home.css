@@ -1,4 +1,4 @@
-.nav{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.9rem clamp(1rem,4vw,3rem);background:rgba(7,9,20,.7);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
+.nav{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.9rem clamp(1rem,4vw,3rem);background:rgba(27, 33, 68, 0.7);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
 .nav ul{display:flex;gap:.3rem;list-style:none;padding:0}
 .nav ul a{padding:.5rem .95rem;border-radius:999px;color:var(--muted);font-weight:600;font-size:.92rem;transition:.2s}
 .nav ul a:hover{color:#fff;background:var(--glass-2)}
