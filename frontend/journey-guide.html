@@ -4,9 +4,30 @@
 <body data-page="journey" data-auth="required">
 <div class="app"><aside id="sidebar"></aside>
 <main class="content">
-<div class="page-head"><h1>Your Journey Guide</h1><p>See configured company hiring rounds and preparation guidance for a job.</p></div>
-<section class="glass" id="picker"><div id="jd"></div><button class="btn" id="go">Generate journey guide</button></section>
+<div class="page-head"><h1>Personalized Hiring Journey</h1><p>Explore database information when available and generate role-specific preparation guidance for any company and job title. AI suggestions are not verified employer hiring policy.</p></div>
+<section class="glass" id="picker">
+	<form id="journeyForm">
+		<div class="pick">
+			<label class="field"><span>Company name</span><input id="companyName" name="company_name" list="companySuggestions" maxlength="200" autocomplete="organization" placeholder="e.g. Google or any company" required></label>
+			<datalist id="companySuggestions"></datalist>
+			<label class="field"><span>Job role</span><input id="jobRole" name="job_role" list="roleSuggestions" maxlength="200" placeholder="e.g. Software Engineer, AI Engineer" required></label>
+			<datalist id="roleSuggestions"></datalist>
+		</div>
+		<div class="pick optional-fields">
+			<label class="field"><span>Location <small>(optional)</small></span><input id="location" maxlength="200" placeholder="e.g. India"></label>
+			<label class="field"><span>Experience level <small>(optional)</small></span><input id="experienceLevel" maxlength="100" placeholder="e.g. Fresher, 2 years"></label>
+			<label class="field"><span>Employment type <small>(optional)</small></span><input id="employmentType" maxlength="100" placeholder="e.g. Internship, Full-time"></label>
+		</div>
+		<label class="field"><span>Job description <small>(optional)</small></span><textarea id="jobDescription" rows="5" maxlength="15000" placeholder="Paste the role description to make preparation more specific"></textarea></label>
+		<p class="muted" id="suggestionStatus" aria-live="polite">Suggestions are optional; you can enter a company and role not listed in PlaceX.</p>
+		<button class="btn" id="go" type="submit">Generate Hiring Journey</button>
+	</form>
+</section>
+<section class="glass saved-section" aria-labelledby="savedGuidesTitle">
+	<h2 id="savedGuidesTitle">Your Saved Guides</h2>
+	<div id="savedGuides" aria-live="polite"><p class="muted">Loading saved guides…</p></div>
+</section>
 <div id="progress" hidden></div><div id="result" hidden></div>
 </main></div>
-<script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/core.js"></script><script src="js/jd-input.js"></script><script src="js/journey.js"></script>
+<script src="js/config.js"></script><script src="js/api.js?v=7"></script><script src="js/core.js"></script><script src="js/journey.js?v=3"></script>
 </body></html>

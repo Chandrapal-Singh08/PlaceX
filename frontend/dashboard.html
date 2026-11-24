@@ -33,6 +33,41 @@
     </div>
   </div>
   <section class="glass" style="margin-top:1rem"><h2>Upcoming journey</h2><div id="journey" style="margin-top:.6rem"></div></section>
+
+  <section class="glass placement-section" aria-labelledby="opportunitiesTitle">
+    <div class="section-title"><h2 id="opportunitiesTitle">Job opportunities</h2></div>
+    <p class="muted">Search a configured external job source. Listings are source-reported; verify current details on the employer's page.</p>
+    <form id="jobSearch" class="job-search">
+      <label class="field"><span>Role or keywords</span><input id="jobQuery" maxlength="200" placeholder="Software engineer, internship…"></label>
+      <label class="field"><span>Company</span><input id="jobCompany" maxlength="200" placeholder="Any company"></label>
+      <label class="field"><span>Location</span><input id="jobLocation" maxlength="200" placeholder="City or remote"></label>
+      <label class="check-field"><input id="jobRemote" type="checkbox"><span>Remote only</span></label>
+      <button class="btn sm" id="searchJobs" type="submit">Search jobs</button>
+    </form>
+    <p id="jobSearchMessage" class="muted" role="status" aria-live="polite"></p>
+    <div id="jobListings" class="opportunity-list"><p class="muted">Search for opportunities to get started.</p></div>
+
+    <details class="preferences">
+      <summary>Personalize recommendations</summary>
+      <form id="jobPreferences" class="preference-form">
+        <label class="field"><span>Preferred roles (comma separated)</span><input id="preferredRoles" maxlength="1000" placeholder="Backend engineer, data analyst"></label>
+        <label class="field"><span>Preferred locations (comma separated)</span><input id="preferredLocations" maxlength="1000" placeholder="Seattle, Remote"></label>
+        <label class="field"><span>Work setting</span><select id="remotePreference"><option value="ANY">Any</option><option value="REMOTE">Remote</option><option value="ONSITE">On-site</option></select></label>
+        <button class="btn ghost sm" type="submit">Save preferences</button>
+      </form>
+    </details>
+    <h3>Recommended for you</h3>
+    <p id="recommendationMessage" class="muted" role="status"></p>
+    <div id="recommendations" class="opportunity-list"><p class="muted">Loading recommendations…</p></div>
+  </section>
+
+  <section class="glass placement-section" aria-labelledby="applicationsTitle">
+    <div class="section-title"><h2 id="applicationsTitle">Application tracker</h2></div>
+    <div id="applicationStats" class="application-stats"></div>
+    <h3>Upcoming actions</h3>
+    <div id="upcomingActions" class="opportunity-list"><p class="muted">Loading upcoming actions…</p></div>
+    <div id="applications" class="application-list"><p class="muted">Loading your saved opportunities…</p></div>
+  </section>
 </main></div>
 <script src="js/config.js"></script><script src="js/api.js?v=3"></script><script src="js/core.js"></script><script src="js/dashboard.js"></script>
 </body></html>
