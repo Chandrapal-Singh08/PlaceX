@@ -105,23 +105,7 @@
     };
   }
 
-  /* Companies are fetched once per page; used by job pickers. */
-  async function loadCompanies() { try { return await API.companies(); } catch (e) { toast(e.message, "error"); return []; } }
-
-  /* Job-description picker. The backend has no endpoint to list JDs, so the id is entered
-     directly (default = seeded JD 1) and the real companies from GET /companies are shown for context. */
-  async function jdPicker(host, defaultId) {
-    host.innerHTML = `<label class="field"><span>Job description ID</span>
-      <input type="number" min="1" id="jdId" value="${defaultId ?? PLACEX_CONFIG.DEFAULT_JD_ID}" inputmode="numeric">
-      <small class="muted" id="jdHint">Loading companies…</small></label>`;
-    const cs = await loadCompanies();
-    host.querySelector("#jdHint").textContent = cs.length
-      ? "Companies in the database: " + cs.map(c => `${c.name}`).join(", ") + ". The seed data links JD 1 to the first company, JD 2 to the second and so on."
-      : "No companies available yet.";
-    return () => Number(host.querySelector("#jdId").value);
-  }
-
-  window.PX = { esc, session, history, toast, badge, timeAgo, fmtBytes, progress, loadCompanies, jdPicker, TYPE_LABEL, TYPE_PAGE, K };
+  window.PX = { esc, session, history, toast, badge, timeAgo, fmtBytes, progress, TYPE_LABEL, TYPE_PAGE, K };
   document.addEventListener("DOMContentLoaded", () => {
     if (document.body.dataset.auth === "required" && !session.require()) return;
     mountShell();

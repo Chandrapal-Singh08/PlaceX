@@ -27,6 +27,56 @@
     $("overview").innerHTML = items.map(([label, value]) =>
       `<div class="glass ov"><b>${PX.esc(value)}</b><span>${PX.esc(label)}</span></div>`).join("");
   };
+  const renderMatchingReport = report => {
+    if (!report) return;
+    const labels = {
+      exact_skill_match: "Exact skill match",
+      semantic_skill_match: "Semantic skill match",
+      experience_match: "Experience match",
+      project_relevance: "Project relevance",
+      responsibility_match: "Responsibility match",
+      eligibility_match: "Education and seniority",
+    };
+    const scoreText = value => value == null ? "Not assessed" : `${Number(value).toFixed(1)}%`;
+    const components = Object.entries(report.components || {}).map(([key, item]) =>
+      `<article class="glass tip"><b>${PX.esc(labels[key] || key)}</b>
+        <p>${PX.esc(scoreText(item.score))}</p>
+        <small class="muted">${PX.esc(item.explanation || item.status || "")}</small></article>`
+    ).join("");
+    const requirements = (report.requirements || []).map(item => {
+      const evidence = (item.evidence || []).map(source =>
+        `<p><small class="muted">${PX.esc(source.source === "resume" ? "Resume evidence" : "Job requirement")}:</small>
+        ${PX.esc(source.quote)}</p>`
+      ).join("");
+      return `<article class="tip"><b>${PX.esc(item.requirement)}</b>
+        <span class="chip ${item.status === "matched" ? "ok" : item.status === "not_evidenced" ? "bad" : ""}">${PX.esc(String(item.status || "not_assessed").replace(/_/g, " "))}</span>
+        ${evidence}</article>`;
+    }).join("");
+    const partial = (report.partially_matched_skills || []).map(item =>
+      `<li><b>${PX.esc(item.skill)}</b> · ${PX.esc((Number(item.similarity) * 100).toFixed(1))}% semantic similarity
+       <p class="muted">${PX.esc(item.evidence?.quote || "")}</p></li>`
+    ).join("");
+    const extractionStatus = report.evidence_extraction_status || "unavailable";
+    const research = report.external_research || {};
+    $("matchingReport").hidden = false;
+    $("matchingReport").innerHTML = `
+      <h3>Overall match: ${PX.esc(scoreText(report.overall_match_score))}</h3>
+      <p class="muted">${PX.esc(report.score_explanation || "")}</p>
+      <p class="muted">Structured evidence extraction: ${PX.esc(extractionStatus)}. Quoted evidence is checked against the supplied resume and job description; unavailable dimensions are excluded from the score.</p>
+      <div class="grid g3">${components}</div>
+      ${partial ? `<h3>Potential partial skill matches</h3><ul>${partial}</ul>` : ""}
+      ${requirements ? `<h3>Requirement evidence</h3><div class="tips">${requirements}</div>` : ""}
+      <section class="glass tip">
+        <h3>External role research · ${PX.esc(research.status || "not available")}</h3>
+        <p class="muted">External research informs explanations only; it does not establish resume evidence or change matching scores. ${PX.esc(research.notice || "")}</p>
+        ${(research.sources || []).map(source => `<p>
+          <a href="${PX.esc(source.url)}" target="_blank" rel="noopener noreferrer">${PX.esc(source.title || source.source_domain || "Research source")}</a>
+          · ${PX.esc(source.source_classification || "secondary source")}
+          · Retrieved ${PX.esc(source.retrieved_at || "date unavailable")}
+        </p>`).join("") || `<p class="muted">No external sources were available.</p>`}
+      </section>
+      <p class="muted">${PX.esc(report.eligibility_note || "")}</p>`;
+  };
 
   $("score").textContent = Math.round(score) + "%";
   $("result").hidden = false;
@@ -34,15 +84,35 @@
   $("tips").innerHTML = tips.length
     ? tips.map((tip, index) => `<div class="glass tip"><i>${index + 1}</i><p>${PX.esc(typeof tip === "string" ? tip : JSON.stringify(tip))}</p></div>`).join("")
     : `<div class="empty">No suggestions for this report.</div>`;
+  if (result.ai_notice) {
+    $("tips").innerHTML += `<div class="alert">${PX.esc(result.ai_notice)}</div>`;
+  }
+  if (result.ai_explanations?.length) {
+    $("tips").innerHTML += `<section class="glass tip"><h3>AI explanations for skill gaps</h3>
+      <p class="muted">These suggestions do not change your deterministic ATS score.</p>
+      ${result.ai_explanations.map(item => `<article><b>${PX.esc(item.skill)}</b><p>${PX.esc(item.reason)}</p><p>${PX.esc(item.action)}</p></article>`).join("")}</section>`;
+  }
+  if (result.ai_suggestions?.length) {
+    $("tips").innerHTML += `<section class="glass tip"><h3>AI resume improvements</h3>
+      ${result.ai_suggestions.map(item => `<p>${PX.esc(item)}</p>`).join("")}</section>`;
+  }
+  if (result.potentially_relevant_skills?.length) {
+    $("tips").innerHTML += `<section class="glass tip"><h3>Potentially relevant skills to verify</h3>
+      <p>${PX.esc(result.potentially_relevant_skills.join(", "))}</p>
+      <small class="muted">These are not counted as matched skills or included in the ATS score.</small></section>`;
+  }
 
   if (general) {
+    $("matchingReport").hidden = true;
+    $("score").nextElementSibling.textContent = "General readiness score";
     const categories = result.by_category || {};
     const missingCategories = result.missing_categories || [];
     const covered = Object.keys(categories).length;
     const areaCount = covered + missingCategories.length;
     $("sub").textContent = "General ATS score · not targeted at a specific job";
     $("verdict").textContent = score >= 75 ? "Well-rounded resume" : score >= 40 ? "Partly covered" : "Needs more skills shown";
-    $("verdictSub").textContent = `Your resume shows skills in ${covered} of ${areaCount} core areas.`;
+    $("verdictSub").textContent = result.score_explanation ||
+      `Your resume shows skills in ${covered} of ${areaCount} core areas.`;
     $("toPrep").hidden = true;
     $("skills").previousElementSibling.querySelector("h2").textContent = "Skills by area";
     const actions = $("toPrep").parentElement;
@@ -63,6 +133,8 @@
     return;
   }
 
+  $("score").nextElementSibling.textContent = "Exact-skill ATS baseline";
+  renderMatchingReport(result.matching_report);
   PX.history.setLastReport(result.report_id);
   $("sub").textContent = `Report #${result.report_id} · job #${job.id}`;
   $("verdict").textContent = score >= 75 ? "Strong match" : score >= 50 ? "Partial match" : "Needs work";

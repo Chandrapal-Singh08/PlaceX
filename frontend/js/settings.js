@@ -1,7 +1,7 @@
 (async function () {
   const $ = id => document.getElementById(id);
   $("sess").innerHTML = `<p>User ID: <b>${PX.session.userId()}</b></p><p>Name: <b>${PX.esc(PX.session.name() || "–")}</b></p><p>Email: <b>${PX.esc(PX.session.email() || "–")}</b></p>
-    <p class="muted" style="margin:.8rem 0;font-size:.85rem">Demo session stored in this browser only. The backend does not verify identity yet.</p><a class="btn ghost sm" href="login.html?switch=1">Switch user</a>`;
+    <p class="muted" style="margin:.8rem 0;font-size:.85rem">Authenticated session stored in this browser. The backend validates the bearer token on user-specific requests.</p><a class="btn ghost sm" href="login.html?switch=1">Switch user</a>`;
   try {
     const s = await API.system();
     $("sys").innerHTML = `<p>API: <b>${PX.esc(PLACEX_CONFIG.API_BASE_URL)}</b> <span class="badge ok">Online</span></p>

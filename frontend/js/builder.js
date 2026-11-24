@@ -39,7 +39,6 @@
     if ($("pCert").value.trim()) profile.certifications = lines($("pCert").value);
     if ($("pAchievements").value.trim()) profile.achievements = lines($("pAchievements").value);
     if ($("pCoursework").value.trim()) profile.coursework = lines($("pCoursework").value);
-    if ($("pFocus").value.trim()) profile.focus_areas = $("pFocus").value.split(",").map(s => s.trim()).filter(Boolean);
 
     $("work").hidden = true;
     const p = PX.progress($("progress"), "Building your resume");
@@ -56,7 +55,22 @@
   function show(job) {
     const r = job.result || {}, m = r.matched_skills || [], x = r.missing_skills || [];
     const chips = (a, c) => a.length ? `<div class="chips">${a.map(s => `<span class="chip ${c}">${PX.esc(s)}</span>`).join("")}</div>` : `<p class="muted">None</p>`;
+    const aiNotice = r.ai_notice
+      ? `<div class="alert">${PX.esc(r.ai_notice)}</div>`
+      : r.ai_status === "generated"
+        ? `<div class="alert">AI improved the wording using only your supplied profile. Review every statement for factual accuracy before using this resume.</div>`
+        : "";
+    const research = r.external_research || {};
     $("out").innerHTML = `<h2>Generated resume</h2>
+      ${aiNotice}
+      <section class="glass tip">
+        <h3>External role research · ${PX.esc(research.status || "not available")}</h3>
+        <p class="muted">Research informs role wording only and is not evidence of your experience. ${PX.esc(research.notice || "")}</p>
+        ${(research.sources || []).map(source => `<p>
+          <a href="${PX.esc(source.url)}" target="_blank" rel="noopener noreferrer">${PX.esc(source.title || source.source_domain || "Research source")}</a>
+          · ${PX.esc(source.source_classification || "secondary source")}
+        </p>`).join("") || `<p class="muted">No external sources were available.</p>`}
+      </section>
       <div class="resume-meta"><strong>Resume #${PX.esc(r.resume_id)}</strong><span class="badge ok">Generated</span></div>
       <div class="sec"><b>Matched skills (${m.length})</b>${chips(m, "ok")}</div>
       <div class="sec"><b>Missing skills (${x.length})</b>${chips(x, "bad")}</div>
